@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <title>AR Навигатор</title>
+    
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    
+    <style>
+        /* Стиль стартового экрана */
+        #splash {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; color: white;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+            text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        #start-btn {
+            background: #4CAF50; color: white; border: none;
+            padding: 16px 45px; font-size: 18px; font-weight: bold;
+            border-radius: 12px; cursor: pointer; margin-top: 25px;
+            box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+            -webkit-tap-highlight-color: transparent;
+        }
+        #status-txt {
+            font-size: 14px; color: #aaa; margin-top: 15px; max-width: 280px;
+        }
+    </style>
+</head>
+<body style="margin: 0; overflow: hidden;">
+
+    <div id="splash">
+        <h2 style="margin: 0 0 10px 0;">AR Навигатор</h2>
+        <p style="margin: 0; font-size: 15px; color: #ddd; line-height: 1.4;">
+            Для отображения меток на камере необходим доступ к GPS, камере и компасу телефона.
+        </p>
+        <button id="start-btn" onclick="requestDevicePermissions()">Запустить AR</button>
+        <div id="status-txt">Нажмите кнопку для старта</div>
+    </div>
+
+    <a-scene embedded 
+             arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" 
+             vr-mode-ui="enabled: false"
+             device-orientation-permission-ui="enabled: false">
+        
+        <a-entity id="ar-container"></a-entity>
+        <a-camera gps-camera rotation-reader></a-camera>
+        
+    </a-scene>
+
+    <script>
+        const YANDEX_API_KEY = 'bb7bc2df-a589-41c0-9f73-7b3188dbb428';
+        let myLat = null;
+        let myLon = null;
+
+        async function requestDevicePermissions() {
+            const statusTxt = document.getElementById('status-txt');
+            statusTxt.innerText = "Запрос доступа к компасу...";
+
+            // 1. Запрашиваем доступ к гироскопу и компасу (Датчикам движения iOS)
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        startARSystem();
+                    } else {
+                        statusTxt.innerText = "Ошибка: доступ к датчикам движения отклонен.";
+                        alert("Без доступа к компасу стрелки не смогут указать направление!");
+                    }
+                } catch (error) {
+                    statusTxt.innerText = "Ошибка датчиков: " + error;
+                    console.error(error);
+                }
+            } else {
+                // На Android или устройствах без жестких ограничений запускаем сразу
+                startARSystem();
+            }
+        }
+
+        function startARSystem() {
+            const statusTxt = document.getElementById('status-txt');
+            statusTxt.innerText = "Поиск GPS спутников...";
+
+            // Скрываем стартовую заставку
+            document.getElementById('splash').style.display = 'none';
+
+            // 2. Запускаем GPS-трекинг
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    myLat = position.coords.latitude;
+                    myLon = position.coords.longitude;
+                    
+                    // Рисуем тестовую точку рядом
+                    createDemoMarker();
+                },
+                (err) => {
+                    alert("Пожалуйста, включите Геолокацию в настройках вашего iPhone для Safari!");
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        function createDemoMarker() {
+            const container = document.getElementById('ar-container');
+            // Если маркер уже создан, ничего не делаем
+            if (container.children.length > 0) return;
+
+            const marker = document.createElement('a-text');
+            marker.setAttribute('value', 'AR РАБОТАЕТ!\nТестовая точка');
+            marker.setAttribute('scale', '15 15 15');
+            marker.setAttribute('look-at', '[camera]');
+            marker.setAttribute('align', 'center');
+            marker.setAttribute('color', '#ff9800');
+            // Ставим метку в 15 метрах на северо-восток от пользователя
+            marker.setAttribute('gps-entity-place', `latitude: ${myLat + 0.00015}; longitude: ${myLon + 0.00015};`);
+            container.appendChild(marker);
+        }
+    </script>
+</body>
+</html>
