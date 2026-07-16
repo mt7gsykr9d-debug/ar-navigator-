@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Навигатор</title>
+    
+    <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    
+    <style>
+        #splash {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #111; color: white;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            z-index: 99999; font-family: Arial, sans-serif;
+            text-align: center; padding: 20px; box-sizing: border-box;
+        }
+        #start-btn {
+            background: #4CAF50; color: white; border: none;
+            padding: 15px 40px; font-size: 18px; font-weight: bold;
+            border-radius: 10px; cursor: pointer; margin-top: 20px;
+        }
+    </style>
+</head>
+<body style="margin: 0; overflow: hidden;">
+
+    <div id="splash">
+        <h2>AR Навигатор</h2>
+        <p>Для работы дополненной реальности необходим доступ к камере и гироскопу.</p>
+        <button id="start-btn" onclick="initAR()">Запустить радар</button>
+    </div>
+
+    <a-scene embedded arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false;" vr-mode-ui="enabled: false">
+        <a-entity id="ar-container"></a-entity>
+        <a-camera gps-camera rotation-reader></a-camera>
+    </a-scene>
+
+    <script>
+        const YANDEX_API_KEY = 'bb7bc2df-a589-41c0-9f73-7b3188dbb428';
+        let myLat = null;
+        let myLon = null;
+
+        async function initAR() {
+            // 1. Проверяем и запрашиваем датчики движения (гироскоп/компас) на iOS
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const response = await DeviceOrientationEvent.requestPermission();
+                    if (response !== 'granted') {
+                        alert('Доступ к компасу отклонен. Стрелка не сможет указывать направление!');
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            // Скрываем заставку
+            document.getElementById('splash').style.display = 'none';
+
+            // 2. Запускаем GPS трекинг
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    myLat = position.coords.latitude;
+                    myLon = position.coords.longitude;
+                    
+                    // Показываем демо-метку рядом с тобой
+                    createDemoMark();
+                },
+                (err) => {
+                    alert('Пожалуйста, включите Службы геолокации в настройках iPhone!');
+                },
+                { enableHighAccuracy: true }
+            );
+        }
+
+        function createDemoMark() {
+            const container = document.getElementById('ar-container');
+            if (container.children.length > 0) return;
+
+            const marker = document.createElement('a-text');
+            marker.setAttribute('value', 'АР РАБОТАЕТ!\nТестовая точка');
+            marker.setAttribute('scale', '15 15 15');
+            marker.setAttribute('look-at', '[camera]');
+            marker.setAttribute('align', 'center');
+            marker.setAttribute('color', '#ff9800');
+            // Ставим метку в 15 метрах от тебя
+            marker.setAttribute('gps-entity-place', `latitude: ${myLat + 0.00015}; longitude: ${myLon + 0.00015};`);
+            container.appendChild(marker);
+        }
+    </script>
+</body>
+</html>
