@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR Навигатор по магазинам</title>
+    <!-- Подключаем библиотеку для 3D графики и AR -->
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar-nft.js"></script>
+    <style>
+        /* Стили для интерфейса поверх камеры */
+        #ui-container {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 90%;
+            max-width: 400px;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 15px;
+            border-radius: 15px;
+            font-family: Arial, sans-serif;
+            z-index: 9999;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        #search-box {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        #search-input {
+            flex-grow: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 5px 0 0 5px;
+            outline: none;
+        }
+        #search-btn {
+            background: #ff5722;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 0 5px 5px 0;
+            cursor: pointer;
+        }
+        .info-card {
+            border-top: 1px solid #444;
+            padding-top: 10px;
+            margin-top: 10px;
+        }
+        .rating {
+            color: #ffb300;
+            font-weight: bold;
+        }
+        #status {
+            font-size: 12px;
+            color: #aaa;
+            text-align: center;
+        }
+    </style>
+</head>
+<body style="margin: 0; overflow: hidden;">
+
+    <!-- Интерфейс поверх камеры -->
+    <div id="ui-container">
+        <div id="search-box">
+            <input type="text" id="search-input" placeholder="Что ищем? (например: кофе, продукты)">
+            <button id="search-btn" onclick="searchPlaces()">Найти</button>
+        </div>
+        <div id="info-area">
+            <div id="status">Ожидание GPS и камеры...</div>
+        </div>
+    </div>
+
+    <!-- AR сцена -->
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false;" vr-mode-ui="enabled: false">
+        
+        <!-- Сюда JS будет динамически добавлять AR-метки -->
+        <a-entity id="ar-elements-container"></a-entity>
+
+        <!-- Камера, которая понимает GPS-координаты -->
+        <a-camera gps-camera rotation-reader></a-camera>
+    </a-scene>
+
+    <script>
+        // Имитация базы данных заведений вокруг (для теста)
+        // В реальном проекте вместо этого массива будет fetch-запрос к Google/Yandex Maps API
+        const mockDatabase = [
+            { name: "Кофейня 'Бодрый День'", type: "кофе", lat: 55.7558, lon: 37.6173, rating: "★ 4.9", reviews: "Отличный раф, вежливый персонал." },
+            { name: "Супермаркет 'Продукты'", type: "продукты", lat: 55.7562, lon: 37.6180, rating: "★ 4.2", reviews: "Большой выбор, но бывают очереди." },
+            { name: "Аптека 24/7", type: "аптека", lat: 55.7550, lon: 37.6165, rating: "★ 4.5", reviews: "Всегда всё есть в наличии." }
+        ];
+
+        let userLatitude = null;
+        let userLongitude = null;
+
+        // 1. Получаем координаты пользователя
+        navigator.geolocation.watchPosition(
+            (position) => {
+                userLatitude = position.coords.latitude;
+                userLongitude = position.coords.longitude;
+                document.getElementById('status').innerText = `GPS активен. Координаты получены.`;
+                
+                // Для теста: "подвинем" наши фейковые магазины поближе к пользователю,
+                // чтобы они гарантированно оказались в радиусе 100 метров от него
+                adjustMockCoordsToUser(userLatitude, userLongitude);
+            },
+            (err) => {
+                document.getElementById('status').innerText = `Ошибка GPS: ${err.message}. Включите геопозицию.`;
+            },
+            { enableHighAccuracy: true }
+        );
+
+        // Функция, которая делает тестовые точки близкими к тебе
+        function adjustMockCoordsToUser(lat, lon) {
+            mockDatabase[0].lat = lat + 0.0003; // Чуть севернее
+            mockDatabase[0].lon = lon + 0.0003;
+            mockDatabase[1].lat = lat - 0.0003; // Чуть южнее
+            mockDatabase[1].lon = lon - 0.0003;
+            mockDatabase[2].lat = lat + 0.0002; // Чуть восточнее
+            mockDatabase[2].lon = lon - 0.0002;
+        }
+
+        // 2. Функция поиска мест
+        function searchPlaces() {
+            const query = document.getElementById('search-input').value.toLowerCase();
+            const container = document.getElementById('ar-elements-container');
+            const infoArea = document.getElementById('info-area');
+            
+            // Очищаем старые метки на экране
+            container.innerHTML = '';
+            infoArea.innerHTML = '';
+
+            if (!userLatitude || !userLongitude) {
+                alert("Подождите, пока определятся ваши GPS координаты.");
+                return;
+            }
+
+            // Ищем совпадения в нашей базе данных
+            const results = mockDatabase.filter(place => 
+                place.name.toLowerCase().includes(query) || place.type.toLowerCase().includes(query)
+            );
+
+            if (results.length === 0) {
+                infoArea.innerHTML = '<div id="status">Ничего не найдено поблизости.</div>';
+                return;
+            }
+
+            // Добавляем найденные места на экран камеры (в AR) и в интерфейс
+            results.forEach((place) => {
+                // Создаем 3D-текст в пространстве камеры
+                const arText = document.createElement('a-text');
+                arText.setAttribute('value', `${place.name}\n${place.rating}`);
+                arText.setAttribute('scale', '3 3 3');
+                arText.setAttribute('look-at', '[camera]');
+                arText.setAttribute('align', 'center');
+                arText.setAttribute('color', '#ff5722');
+                
+                // Привязываем элемент к реальным географическим координатам
+                arText.setAttribute('gps-entity-place', `latitude: ${place.lat}; longitude: ${place.lon};`);
+                container.appendChild(arText);
+
+                // Выводим карточку с отзывами на экран (в UI)
+                const card = document.createElement('div');
+                card.className = 'info-card';
+                card.innerHTML = `
+                    <strong>${place.name}</strong> <span class="rating">${place.rating}</span><br>
+                    <small style="color:#aaa;">Отзыв: "${place.reviews}"</small><br>
+                    <button onclick="buildRoute(${place.lat}, ${place.lon})" style="margin-top:5px; background:#4CAF50; color:white; border:none; padding:4px 8px; border-radius:3px; cursor:pointer;">
+                        Построить маршрут
+                    </button>
+                `;
+                infoArea.appendChild(card);
+            });
+        }
+
+        // 3. Функция прокладки маршрута (открывает внешнюю карту для навигации)
+        function buildRoute(destLat, destLon) {
+            // Перенаправляем пользователя в Google Карты для построения пешеходного маршрута
+            const url = `https://www.google.com/maps/dir/?api=1&origin=${userLatitude},${userLongitude}&destination=${destLat},${destLon}&travelmode=walking`;
+            window.open(url, '_blank');
+        }
+    </script>
+</body>
+</html>
